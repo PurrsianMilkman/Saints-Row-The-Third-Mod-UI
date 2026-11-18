@@ -1,4 +1,4 @@
-# SR3 Mod UI
+# Saints Row The Third UI API Mod
 
 A UI API for **Saints Row: The Third (PC, DX11)** mods. Mods describe their settings, and SR3 Mod UI
 draws them as **native game menus** under **Pause > MODS**, with the game's own toggles, sliders and
