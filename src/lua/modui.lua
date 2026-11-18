@@ -20,7 +20,7 @@ local C = __modui_c
 local M = {}
 C.gset("ModUI", M)
 
-M.version = 1
+M.version = 2
 M.state = C.state			-- "ui" or "game"
 M.pcall = C.pcall			-- the UI state has no pcall of its own
 M.fmt = C.fmt				-- fmt(x, decimals) -> string
@@ -510,6 +510,9 @@ sync_c_pages = function()
 			Adding_c = false
 			if w ~= nil then w.enabled = cw.enabled end
 		end
+		if cp.attach ~= nil and cp.attach ~= "" and not p.attached then
+			M.extend(cp.attach, cp.id, { list_in_mods = cp.listed })
+		end
 	end
 end
 
@@ -595,7 +598,9 @@ local function screen_data()
 	if Screen.level == "pages" then
 		Screen.title = "MODS"
 		for i = 1, #Pages do
-			data[#data + 1] = { type = TYPE_BUTTON, label = Pages[i].title, _page = Pages[i] }
+			if not Pages[i].hidden then		-- pages attached to a game screen live there instead
+				data[#data + 1] = { type = TYPE_BUTTON, label = Pages[i].title, _page = Pages[i] }
+			end
 		end
 		if #data == 0 then data[1] = { type = TYPE_BUTTON, label = "No mods installed", disabled = true } end
 	elseif Screen.level == "page" then
@@ -922,6 +927,293 @@ M.wrap("pause_menu_top_button_a", function(orig, ...)
 	end
 	return orig(...)
 end)
+
+-------------------------------------------------------------------------------------------------------
+-- extending the game's own screens: rows appended to Options > Display, Audio, Gameplay, ...
+--
+--   local p = ModUI.extend("display", "moreopts_display", { heading = "MORE OPTIONS" })
+--   p:toggle("fxaa", "Extra smoothing", false, function(on) end)   -- the same widgets as a page
+--   ModUI.modify("display", function(data) ... end)                 -- edit the game's own rows
+--
+-- Rows go at the END of the screen: the game's scripts address some rows by index, and an insert in the
+-- middle would shift them. While a screen initialises we learn which handler functions it registers
+-- (Vdo_input_tracker:add_input, List:add_mouse_inputs) and route input on our rows to us; every other
+-- row stays the game's. Colour rows are not supported here (they need the MODS screen's editor).
+-------------------------------------------------------------------------------------------------------
+M.screens = {
+	pause = "pause_menu_top", options = "pause_options_menu", display = "pause_options_display_pc",
+	audio = "pause_options_audio", gameplay = "pause_options_difficulty", controls = "pause_options_controls",
+	mouse = "pause_options_mouse",
+}
+local Ext = {}			-- screen -> { pages, modifiers, handlers = { func_name = input }, prefix, active }
+local Ext_wrapped = {}	-- handler names already routed
+local ID_EXT = 7800
+
+local function ext_rows_present(e)
+	for i = 1, #e.pages do
+		for j = 1, #e.pages[i].widgets do
+			if e.pages[i].widgets[j].kind ~= "color" then return true end
+		end
+	end
+	return false
+end
+
+-- strip our previous rows, let mods edit the game's rows, then append ours
+local function ext_fill(e, data)
+	local n = #data
+	local k = 0
+	for i = 1, n do
+		local it = data[i]
+		if not (type(it) == "table" and it._ext) then
+			k = k + 1
+			data[k] = it
+		end
+	end
+	for i = k + 1, n do data[i] = nil end
+	for i = 1, #e.modifiers do
+		local ok, err = C.pcall(e.modifiers[i], data)
+		if not ok then M.log("ERROR in ModUI.modify(" .. e.screen .. "): " .. str(err)) end
+	end
+	local id = ID_EXT
+	for i = 1, #e.pages do
+		local p = e.pages[i]
+		if p.heading ~= nil and #p.widgets > 0 then
+			data[#data + 1] = { type = TYPE_BUTTON, label = p.heading, disabled = true, _ext = true, id = id, tool_tip_text = "" }
+			id = id + 1
+		end
+		for j = 1, #p.widgets do
+			local w = p.widgets[j]
+			if w.kind ~= "color" then
+				local it = row_for(w)
+				it._ext = true
+				it.id = id
+				it.tool_tip_text = w.tip or ""
+				data[#data + 1] = it
+				id = id + 1
+			end
+		end
+	end
+end
+
+local function ext_selected()
+	local list = C.gget("List")
+	if list == nil or list.data == nil then return nil end
+	local it = list.data[list:get_selection()]
+	if type(it) == "table" and it._ext and it._w ~= nil then return it, list end
+	return nil
+end
+
+local function ext_changed(it)
+	local w = it._w
+	local v
+	if w.kind == "toggle" then v = it.current_value == 2
+	elseif w.kind == "choice" then v = it.current_value
+	elseif w.kind == "slider" then v = w.min + it.current_value * w.step
+	else return end
+	if v == w.value then return end
+	store(w, v)
+	notify(w, v)
+end
+
+local function ext_select(it, list)
+	local w = it._w
+	if w.kind == "button" then
+		game_UI_audio_play("UI_Main_Menu_Select")
+		notify(w, 1)
+	elseif w.kind == "toggle" or w.kind == "choice" then
+		list:move_slider(1)
+		ext_changed(it)
+	end
+end
+
+local function ext_move(it, list, dir)
+	if it.type == TYPE_SLIDER or it.type == TYPE_TOGGLE then
+		list:move_slider(dir)
+		ext_changed(it)
+	end
+end
+
+-- route the screen's own handlers: our rows to us, everything else to the game
+local function ext_route(e)
+	for fname, input in pairs(e.handlers) do
+		if not Ext_wrapped[fname] then
+			if input == "select" then
+				Ext_wrapped[fname] = true
+				M.wrap(fname, function(orig, ...)
+					local it, list = ext_selected()
+					if it ~= nil then ext_select(it, list) return end
+					return orig(...)
+				end)
+			elseif input == "nav_left" or input == "nav_right" then
+				Ext_wrapped[fname] = true
+				local dir = -1
+				if input == "nav_right" then dir = 1 end
+				M.wrap(fname, function(orig, ...)
+					local it, list = ext_selected()
+					if it ~= nil then ext_move(it, list, dir) return end
+					return orig(...)
+				end)
+			end
+		end
+	end
+	local prefix = e.prefix
+	if prefix == nil then return end
+	-- the list subscribes these by name for slider rows; a screen without sliders may not define them
+	local names = { "_mouse_click", "_mouse_move", "_mouse_drag", "_mouse_drag_release" }
+	for i = 1, #names do
+		if C.gget(prefix .. names[i]) == nil then C.gset(prefix .. names[i], function() end) end
+	end
+	local click = prefix .. "_mouse_click"
+	if not Ext_wrapped[click] then
+		Ext_wrapped[click] = true
+		M.wrap(click, function(orig, event, target, x, y)
+			local list = C.gget("List")
+			if list ~= nil and list.data ~= nil then
+				local idx = list:get_button_index(target)
+				if idx ~= 0 then
+					local it = list.data[idx]
+					if type(it) == "table" and it._ext and it._w ~= nil then
+						list:set_selection(idx)
+						list:move_cursor(0, true)
+						if it.type ~= TYPE_SLIDER then ext_select(it, list) end
+						return
+					end
+				else
+					local it = ext_selected()
+					if it ~= nil then
+						if list:is_left_arrow(target) then ext_move(it, list, -1) return end
+						if list:is_right_arrow(target) then ext_move(it, list, 1) return end
+						if list:is_slider(target) then
+							list:move_slider(0, x)
+							ext_changed(it)
+							return
+						end
+					end
+				end
+			end
+			return orig(event, target, x, y)
+		end)
+	end
+	local drag = prefix .. "_mouse_drag"
+	if not Ext_wrapped[drag] then
+		Ext_wrapped[drag] = true
+		M.wrap(drag, function(orig, event, target, x, y)
+			local it, list = ext_selected()
+			if it ~= nil and list:is_slider(target) then
+				list:move_slider(0, x)
+				ext_changed(it)
+				return
+			end
+			return orig(event, target, x, y)
+		end)
+	end
+end
+
+local function ext_install(screen, e)
+	M.wrap(screen .. "_init", function(orig, ...)
+		-- the MODS screen borrows the options document; leave that one alone
+		if screen == "pause_options_menu" and Want_screen then return orig(...) end
+		local list = C.gget("List")
+		local tracker = C.gget("Vdo_input_tracker")
+		if list == nil or tracker == nil or not ext_rows_present(e) and #e.modifiers == 0 then return orig(...) end
+
+		-- rows: every draw of this screen's list (it redraws on presets, reverts, ...) gets ours appended
+		if not (e.active and rawget(list, "draw_items") == e.draw) then
+			local real, own = list.draw_items, rawget(list, "draw_items")
+			e.own_draw = own
+			e.draw = function(self, data, sel, width, a, b, c)
+				if e.active and type(data) == "table" then ext_fill(e, data) end
+				return real(self, data, sel, width, a, b, c)
+			end
+			list.draw_items = e.draw
+		end
+		e.active = true
+
+		-- learn the handler names, and widen the panel to our rows, while the screen sets itself up
+		local add_input = rawget(tracker, "add_input")
+		tracker.add_input = function(self, input, fname, a, b, c)
+			if type(fname) == "string" then e.handlers[fname] = input end
+			return add_input(self, input, fname, a, b, c)
+		end
+		local own_mouse = rawget(list, "add_mouse_inputs")
+		local add_mouse = list.add_mouse_inputs
+		list.add_mouse_inputs = function(self, prefix, a, b, c, d, f, g)
+			if type(prefix) == "string" then e.prefix = prefix end
+			return add_mouse(self, prefix, a, b, c, d, f, g)
+		end
+		local style = C.gget("menu_common_set_list_style")
+		if type(style) == "function" then
+			C.gset("menu_common_set_list_style", function(l, h, w, a, b)
+				if type(w) == "number" and type(l) == "table" and type(l.width) == "number" then
+					local need = l.width + PANEL_PAD
+					if need > w then w = clamp(need, w, MAX_WIDTH) end
+				end
+				return style(l, h, w, a, b)
+			end)
+		end
+
+		local ok, r1, r2 = C.pcall(orig, ...)
+
+		tracker.add_input = add_input
+		list.add_mouse_inputs = own_mouse
+		if type(style) == "function" then C.gset("menu_common_set_list_style", style) end
+		ext_route(e)
+		if not ok then M.log("ERROR in " .. screen .. "_init: " .. str(r1)) end
+		return r1, r2
+	end)
+
+	M.wrap(screen .. "_cleanup", function(orig, ...)
+		local r1, r2 = orig(...)
+		if e.active then
+			e.active = false
+			local list = C.gget("List")
+			if list ~= nil and rawget(list, "draw_items") == e.draw then list.draw_items = e.own_draw end
+		end
+		return r1, r2
+	end)
+end
+
+local function ext_for(screen)
+	local e = Ext[screen]
+	if e == nil then
+		e = { screen = screen, pages = {}, modifiers = {}, handlers = {} }
+		Ext[screen] = e
+		ext_install(screen, e)
+	end
+	return e
+end
+
+-- ModUI.extend(screen, id, opts) -> a page whose rows are appended to a game screen.
+--   screen: a key of ModUI.screens ("display", "audio", "gameplay", "controls", "mouse", "options", "pause")
+--           or a document name. opts.heading: a greyed row above yours; opts.list_in_mods: also in MODS.
+function M.extend(screen, id, opts)
+	screen = M.screens[screen] or screen
+	local p = M.page(id, (opts ~= nil and opts.title) or id)
+	if p == nil then return nil end
+	p.hidden = not (opts ~= nil and opts.list_in_mods)
+	if opts ~= nil and opts.heading ~= nil then p.heading = opts.heading end
+	p.attached = screen
+	local e = ext_for(screen)
+	local have = false
+	for i = 1, #e.pages do if e.pages[i] == p then have = true end end
+	if not have then e.pages[#e.pages + 1] = p end
+	return p
+end
+
+-- ModUI.modify(screen, fn): fn(data) before every draw of that screen, with the game's own rows
+-- (labels, options, min/max/step, disabled, tool_tip_text). Changing what a row MEANS is up to your mod:
+-- the game's scripts still apply the row's value as before.
+function M.modify(screen, fn)
+	screen = M.screens[screen] or screen
+	local e = ext_for(screen)
+	e.modifiers[#e.modifiers + 1] = fn
+end
+
+-- tooltip text for a widget on screens that show one (Display)
+function Page:tip(key, text)
+	local w = self.by_key[key]
+	if w ~= nil then w.tip = text end
+end
 
 function M._booted()
 	sync_c_pages()

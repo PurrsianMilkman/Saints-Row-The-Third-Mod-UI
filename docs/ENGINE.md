@@ -58,3 +58,17 @@ At start-up the game creates a named mutex (CreateMutexW at 0x00DC8872); if it a
 In a windowed copy, `SendInput` did not reach the game, but `PostMessage(WM_KEYDOWN/WM_KEYUP)` to its
 window drives both menus and gameplay (held keys need auto-repeat messages, tools/hold.ps1).
 `PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT)` captures the game window even when it is covered.
+
+## Option screens (for ModUI.extend)
+
+- Each screen is a document: `pause_options_display_pc` (PC Display), `pause_options_audio`,
+  `pause_options_difficulty` (Gameplay), `pause_options_controls`, `pause_options_mouse`,
+  `pause_options_menu` (the category list, also opened from the main menu), `pause_menu_top`.
+  Init/cleanup are the globals `<document>_init` / `<document>_cleanup`.
+- Display keeps fixed row indices (`ASPECT_INDEX`, `RESOLUTIONS_INDEX`, `PRESET_INDEX`, `DX11_INDEX`,
+  `ANTI_ALIASING_INDEX`) and reads others by id (`List:get_data_from_id`); it rebuilds `Data` and redraws on
+  a preset change. Rows can therefore only be appended. It shows `Data[i].tool_tip_text` on navigation.
+- Handlers are registered by name through `Vdo_input_tracker:add_input(input, func_name, ...)` (a class
+  method reached through the instance metatable) and `List:add_mouse_inputs(prefix, tracker)`
+  (`<prefix>_mouse_click/_move/_drag/_drag_release/_scroll`). ModUI records both during `<document>_init`
+  and routes input on its rows; verified in game 2026-11-18 on Display and the Options list.

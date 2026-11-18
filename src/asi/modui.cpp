@@ -68,7 +68,7 @@ struct Widget {
     bool enabled = true;
     SR3ModUI_Callback cb = nullptr; void* user = nullptr;
 };
-struct Page { std::string id, title; };
+struct Page { std::string id, title, attach; int flags = 0; };   // attach: game screen (AttachPage)
 std::vector<Page> g_pages;
 std::vector<Widget> g_widgets;
 int g_rev = 1;
@@ -108,7 +108,7 @@ int __cdecl apiAddPage(const char* page, const char* title) {
     EnterCriticalSection(&g_cs);
     bool found = false;
     for (auto& p : g_pages) if (p.id == page) { p.title = title ? title : page; found = true; }
-    if (!found) g_pages.push_back({ page, title ? title : page });
+    if (!found) { Page p; p.id = page; p.title = title ? title : page; g_pages.push_back(p); }
     g_rev++;
     LeaveCriticalSection(&g_cs);
     return 1;
@@ -119,7 +119,7 @@ int addWidget(Widget w) {
     EnterCriticalSection(&g_cs);
     bool havePage = false;
     for (auto& p : g_pages) if (p.id == w.page) havePage = true;
-    if (!havePage) g_pages.push_back({ w.page, w.page });
+    if (!havePage) { Page p; p.id = w.page; p.title = w.page; g_pages.push_back(p); }
     double saved;
     if (w.type != W_BUTTON && w.type != W_LABEL && iniLoad(w.page.c_str(), w.key.c_str(), &saved)) w.value = saved;
     Widget* old = findWidget(w.page.c_str(), w.key.c_str());
@@ -184,6 +184,17 @@ void __cdecl apiSetEnabled(const char* page, const char* key, int en) {
     if (w) { w->enabled = en != 0; g_rev++; }
     LeaveCriticalSection(&g_cs);
 }
+int __cdecl apiAttachPage(const char* page, const char* screen, int flags) {
+    if (!validId(page) || !screen || !*screen || strlen(screen) > 64) return 0;
+    EnterCriticalSection(&g_cs);
+    Page* pp = nullptr;
+    for (auto& p : g_pages) if (p.id == page) pp = &p;
+    if (!pp) { Page p; p.id = page; p.title = page; g_pages.push_back(p); pp = &g_pages.back(); }
+    pp->attach = screen; pp->flags = flags;
+    g_rev++;
+    LeaveCriticalSection(&g_cs);
+    return 1;
+}
 int __cdecl apiRegisterHandler(const char* name, SR3ModUI_Handler h, void* user) {
     if (!validId(name) || !h) return 0;
     EnterCriticalSection(&g_cs);
@@ -220,6 +231,7 @@ const SR3ModUI_Api g_api = {
     apiVersion, apiAddPage, apiAddButton, apiAddToggle, apiAddSlider, apiAddChoice, apiAddColor, apiAddLabel,
     apiGetValue, apiSetValue, apiSetLabel, apiSetEnabled,
     apiRegisterHandler, apiArgCount, apiArgNumber, apiArgString, apiReturnNumber, apiReturnString, apiReturnBool, apiLog,
+    apiAttachPage,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -267,6 +279,10 @@ int __cdecl n_pages(lua_State* L) {
     for (auto& p : g_pages) {
         lua_newtable(L);
         setStr(L, "id", p.id); setStr(L, "title", p.title);
+        if (!p.attach.empty()) {
+            setStr(L, "attach", p.attach);
+            lua_pushboolean(L, (p.flags & SR3MODUI_ALSO_IN_MODS) != 0); lua_setfield(L, -2, "listed");
+        }
         lua_newtable(L);
         int wi = 0;
         for (auto& w : g_widgets) {

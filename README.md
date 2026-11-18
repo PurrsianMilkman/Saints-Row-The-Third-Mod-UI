@@ -58,6 +58,38 @@ Colour rows open an editor with Hue / Saturation / Luminance sliders and a Resul
 callback runs on every slider move (live preview) and again with the old colour if the player backs out;
 pass `{ live = false }` as the last argument of `page:color` to get a call only when the colour is kept.
 
+### Adding rows to the game's own screens
+
+A page can live in one of the game's option screens instead of MODS: its rows are added to the end of
+that screen, in the game's own list, from the pause menu and the main menu alike.
+
+```lua
+local p = ModUI.extend("display", "mymod_display", { heading = "MY MOD" })   -- heading: optional greyed row
+p:toggle("sharpen", "Sharpen", false, function(on) end)                      -- the same widgets as a page
+p:slider("lod", "Draw distance", 1, 3, 0.25, 1, function(v) end)
+p:tip("sharpen", "Shown in the Display screen's tooltip")
+
+ModUI.modify("display", function(data)          -- edit the game's own rows before every draw
+    for i = 1, #data do
+        if data[i].label == "MENU_SHADOW_DETAIL" then data[i].options[4] = "ULTRA+" end
+    end
+end)
+```
+
+Screens: `display`, `audio`, `gameplay`, `controls`, `mouse`, `options` (the list of option categories),
+`pause` (the pause menu itself), or any screen document name (`ModUI.screens` maps the short names).
+`{ list_in_mods = true }` also lists the page in MODS.
+
+- Rows are always added at the **end**: the game's scripts find some rows by position, so a row inserted
+  in the middle would break the stock settings.
+- Your rows answer your callbacks; every other row stays the game's, so its own settings behave as
+  before. Colour rows are not shown on game screens (use a MODS page for those).
+- `modify` changes what a row shows, not what it does: the game applies a row's value its own way. A
+  new option (an extra shadow level, a wider range) needs your mod to make it work, for example by
+  wrapping the game function that applies the setting with `ModUI.wrap`, or with an ASI.
+
+See [`examples/example_extend.lua`](examples/example_extend.lua).
+
 ### Hooking the game's own UI
 
 ```lua
@@ -126,6 +158,14 @@ double speed = ModUI.GetValue("mymod", "speed");          // any thread
 ModUI.SetValue("mymod", "speed", 1.0);                     // saves; the menu updates
 ```
 
+To put a C page's rows into a game screen instead of MODS (API version 2):
+
+```c
+ModUI.AttachPage("mymod", "display", 0);                       // or SR3MODUI_ALSO_IN_MODS to show both
+```
+
+With an older SR3ModUI.asi installed, `AttachPage` is a no-op (check `ModUI.Version() >= 2`).
+
 Callbacks run on the game's UI thread when the player changes a value. Saved values are restored when a
 widget is added (read them with `GetValue`). A C mod may add widgets to a page its own Lua script made
 (same page id); they appear after the script's rows.
@@ -162,7 +202,8 @@ inactive and says so in the log).
 
 ## Tests
 
-`test/sim.lua` drives the MODS screen against stubs: `python tools/luacheck.py run test/_pre.lua test/sim.lua`
+`test/sim.lua` drives the MODS screen and `test/sim_extend.lua` a stub of the Display screen against
+stubs: `python tools/luacheck.py run test/_pre.lua test/sim.lua test/sim_extend.lua`
 (needs a 64-bit Lua 5.1/LuaJIT DLL; OBS Studio's is used by default, `LUA51_DLL` overrides).
 `tools/drive.ps1` drives a second game copy with posted window messages (no focus needed) and captures its
 window; `tools/multi_instance.cpp` is a test-only plugin that lets that copy run next to another instance.

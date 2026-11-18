@@ -18,12 +18,13 @@
 #ifndef SR3MODUI_H
 #define SR3MODUI_H
 #include <windows.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define SR3MODUI_VERSION 1
+#define SR3MODUI_VERSION 2
 
 typedef void (__cdecl *SR3ModUI_Callback)(const char* page, const char* key, double value, void* user);
 
@@ -57,7 +58,14 @@ typedef struct SR3ModUI_Api {
     void   (__cdecl *ReturnString)(SR3ModUI_Call* c, const char* s);
     void   (__cdecl *ReturnBool)(SR3ModUI_Call* c, int b);
     void   (__cdecl *Log)(const char* mod, const char* text);    /* SR3ModUI.log */
+    /* --- version 2 --- */
+    /* Show a page's rows at the END of a game screen instead of (or, flags & SR3MODUI_ALSO_IN_MODS, as
+       well as) Pause > MODS. screen: "display", "audio", "gameplay", "controls", "mouse", "options",
+       "pause" or a document name such as "pause_options_display_pc". Colour rows are not shown there. */
+    int    (__cdecl *AttachPage)(const char* page, const char* screen, int flags);
 } SR3ModUI_Api;
+
+#define SR3MODUI_ALSO_IN_MODS 1
 
 #ifndef SR3MODUI_NO_LOADER
 /* Filled by SR3ModUI_Load(); all members point at no-ops until then. */
@@ -72,14 +80,18 @@ static int SR3ModUI_Load(void) {
     if (!m) m = LoadLibraryA("SR3ModUI.asi");
     get_t get = m ? (get_t)GetProcAddress(m, "SR3ModUI_GetApi") : NULL;
     const SR3ModUI_Api* api = get ? get(SR3MODUI_VERSION) : NULL;
-    if (api) { ModUI = *api; return 1; }
-    {   /* not installed: make every member callable */
+    {   /* start with every member callable (a no-op), then take what the installed plugin has */
         void** p = (void**)&ModUI; size_t i;
         for (i = 0; i < sizeof ModUI / sizeof(void*); i++) p[i] = (void*)sr3modui_noop_i;
         ModUI.GetValue = (double (__cdecl*)(const char*, const char*))sr3modui_noop_d;
         ModUI.ArgNumber = (double (__cdecl*)(SR3ModUI_Call*, int))sr3modui_noop_d;
     }
-    return 0;
+    if (!api) return 0;
+    {   /* an older plugin has a shorter table: copy only its part (version 1 ends before AttachPage) */
+        size_t n = api->Version() >= 2 ? sizeof ModUI : (size_t)((char*)&ModUI.AttachPage - (char*)&ModUI);
+        memcpy(&ModUI, api, n);
+    }
+    return 1;
 }
 #endif /* SR3MODUI_NO_LOADER */
 
