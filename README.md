@@ -141,6 +141,14 @@ ModUI.RegisterHandler("mymod_add", add, NULL);             // Lua: ModUI.call("m
 
 See [`examples/example_asi.cpp`](examples/example_asi.cpp) and [`examples/example_mod.lua`](examples/example_mod.lua).
 
+## Mods built with SR3 Mod UI
+
+SR3 Mod UI ships no mods of its own (the example page is opt-in with `install.ps1 -Examples`). Mods that
+use it list it as a requirement and are installed separately:
+
+- [Store Colour Picker](https://github.com/PurrsianMilkman/Saints-Row-The-Third-Store-Color-Picker):
+  true-RGB HSL colour picker for the clothing stores (a script hooking the stock store + an ASI handler).
+
 ## How it works
 
 The game loads every Lua script (each UI document's script and the gameplay scripts) through two engine
