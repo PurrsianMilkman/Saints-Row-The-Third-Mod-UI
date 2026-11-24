@@ -107,4 +107,21 @@ pause_options_display_pc_cleanup()
 check(stock.cleanup and rawget(List, "draw_items") == nil, "cleanup restores the list")
 List:draw_items({ { type = TYPE_BUTTON, label = "X" } }, 1, 495)
 check(#List.data == 1, "other screens are untouched afterwards")
+
+-- a page's own title survives ModUI.extend without a title (it used to be replaced by the id)
+local titled = ModUI.page("titled", "Pretty Title")
+ModUI.extend("display", "titled", { list_in_mods = true })
+check(titled.title == "Pretty Title", "extend without a title keeps the page title (" .. tostring(titled.title) .. ")")
+-- a C page attached with AttachPage(..., ALSO_IN_MODS) shows its title in MODS, not its id
+local rev = 10
+__modui_c.rev = function() return rev end
+__modui_c.c_pages = function()
+	return { { id = "capage", title = "Nice C Title", attach = "display", listed = true, widgets = {
+		{ type = "toggle", key = "t", label = "T", value = 0, enabled = true, min = 0, max = 1, step = 1 } } } }, rev
+end
+ModUI._booted()
+local cpage
+for _, pg in ipairs(ModUI.pages()) do if pg.id == "capage" then cpage = pg end end
+check(cpage ~= nil and cpage.title == "Nice C Title", "attached C page keeps its title: " .. tostring(cpage and cpage.title))
+check(cpage ~= nil and cpage.attached == "pause_options_display_pc" and not cpage.hidden, "attached C page is on Display and listed in MODS")
 print(fails == 0 and "EXTEND ALL PASS" or (fails .. " EXTEND FAILED"))

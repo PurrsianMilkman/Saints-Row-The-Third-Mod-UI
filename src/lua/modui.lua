@@ -511,7 +511,7 @@ sync_c_pages = function()
 			if w ~= nil then w.enabled = cw.enabled end
 		end
 		if cp.attach ~= nil and cp.attach ~= "" and not p.attached then
-			M.extend(cp.attach, cp.id, { list_in_mods = cp.listed })
+			M.extend(cp.attach, cp.id, { list_in_mods = cp.listed, title = cp.title })
 		end
 	end
 end
@@ -1188,7 +1188,8 @@ end
 --           or a document name. opts.heading: a greyed row above yours; opts.list_in_mods: also in MODS.
 function M.extend(screen, id, opts)
 	screen = M.screens[screen] or screen
-	local p = M.page(id, (opts ~= nil and opts.title) or id)
+	-- no title given: keep the page's own (M.page sets a title only when it is passed, else uses the id for a new page)
+	local p = M.page(id, opts ~= nil and opts.title or nil)
 	if p == nil then return nil end
 	p.hidden = not (opts ~= nil and opts.list_in_mods)
 	if opts ~= nil and opts.heading ~= nil then p.heading = opts.heading end
