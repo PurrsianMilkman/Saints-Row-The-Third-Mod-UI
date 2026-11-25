@@ -10,6 +10,7 @@
 // No game file is modified. C mods talk to the API through SR3ModUI_GetApi (include/sr3modui.h).
 #define NOMINMAX
 #define SR3MODUI_NO_LOADER
+#define SR3MODUI_RELEASE "0.2.0"   // shown in SR3ModUI.log; keep in step with the release tag
 #include "../../include/sr3modui.h"
 #include "lua.h"
 #include <cstdio>
@@ -598,7 +599,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
         snprintf(g_log, sizeof g_log, "%sSR3ModUI.log", g_dir);
         snprintf(g_ini, sizeof g_ini, "%sSR3ModUI.ini", g_dir);
         DeleteFileA(g_log);
-        logf("SR3ModUI %d loaded in %s", SR3MODUI_VERSION, g_dir);
+        logf("SR3ModUI release %s (API %d) loaded in %s", SR3MODUI_RELEASE, SR3MODUI_VERSION, g_dir);
         install();
     }
     return TRUE;

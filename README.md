@@ -21,15 +21,27 @@ stock screens but are not tested yet).
 
 ## Install
 
-Requirements: `SaintsRowTheThird_DX11.exe` and an ASI loader (`dinput8.dll`, e.g. Ultimate ASI Loader).
+1. Download `SR3-UI-API-Mod-v<version>.zip` from the
+   [latest release](https://github.com/PurrsianMilkman/Saints-Row-The-Third-Mod-UI/releases/latest) and extract it anywhere.
+2. Close the game and double-click **`install.bat`**. It looks for the game (Steam, GOG, common folders, or a
+   folder picker), copies the plugin in, and prints `OK` for each file it checked.
+3. Start the game, pause, and pick **MODS**.
 
-```
-powershell -ExecutionPolicy Bypass -File install.ps1 -Game "C:\Games\Saints Row 3" [-Examples]
-```
+You need the DX11 executable, `SaintsRowTheThird_DX11.exe` (the plugin checks the game's code before patching
+and does nothing on any other executable), and an ASI loader (`dinput8.dll`). If the game folder has no
+`dinput8.dll`, the installer offers to download **Ultimate ASI Loader 9.7.2** (MIT, by ThirteenAG) from its
+official GitHub release and checks the file against a built-in SHA-256 first. It never replaces an existing
+`dinput8.dll`.
 
-This copies `SR3ModUI.asi` and `SR3ModUI\modui.lua` into the game folder and creates `SR3ModUI\mods\`.
-`-Examples` also installs the example script. Build the plugin yourself with `build.bat` (Visual Studio
-2022 Build Tools, x86). Log: `SR3ModUI.log` in the game folder.
+Options (add to `install.bat`, or pass to `install.ps1`): `-Examples` installs a demo page, `-Game "<folder>"` skips
+the search, `-Yes` / `-NoLoader` answer the loader question, `-Uninstall` removes the plugin (your mod scripts in
+`SR3ModUI\mods\` and your saved values in `SR3ModUI.ini` are kept).
+
+**By hand:** copy `SR3ModUI.asi` and the `SR3ModUI` folder from the zip into the game folder (next to the
+DX11 exe) and make sure an ASI loader is there. Mod scripts go in `SR3ModUI\mods\`. Log: `SR3ModUI.log`.
+
+**From source:** `build.bat` builds `out\SR3ModUI.asi` (Visual Studio 2022 Build Tools, x86);
+`tools\package.ps1` builds the release zip; `install.ps1` also works straight from a checkout after a build.
 
 ## Lua mods
 
